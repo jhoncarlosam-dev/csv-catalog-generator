@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Catálogos CSV</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .container { max-width: 800px; margin-top: 50px; }
+        .card { box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .field-row { display: flex; align-items: end; gap: 10px; margin-bottom: 10px; }
+        .field-row .form-control { flex: 1; }
+        .remove-field { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+        .add-field { margin-top: 10px; }
+        .preview { background: #f8f9fa; border: 1px solid #dee2e6; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; }
+        .preview table { width: 100%; }
+        .preview th, .preview td { padding: 5px; border: 1px solid #dee2e6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="card-header">
+                <h1 class="h4 mb-0">Generador de Catálogos CSV</h1>
+            </div>
+            <div class="card-body">
+                <form id="form-generar">
+                    <div class="mb-3">
+                        <label for="num_items" class="form-label">Cantidad de valores</label>
+                        <input type="number" class="form-control" id="num_items" name="num_items" value="100" min="1" max="10000">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Campos del CSV</label>
+                        <div id="fields-container">
+                            <!-- Campos dinámicos aquí -->
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm add-field" id="add-field">+ Agregar Campo</button>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="inicio_numero" class="form-label">Número inicial</label>
+                        <input type="number" class="form-control" id="inicio_numero" name="inicio_numero" value="1" min="0">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary" id="btn-generar">Generar CSV</button>
+                </form>
+                
+                <div id="result" class="mt-4" style="display: none;">
+                    <h5>Resultado</h5>
+                    <div id="preview" class="preview"></div>
+                    <a id="download-link" href="#" class="btn btn-success mt-3" download>Descargar CSV</a>
+                    <button id="btn-limpiar" class="btn btn-warning mt-3 ms-2">Limpiar Archivos</button>
+                </div>
+                
+                <div id="error" class="alert alert-danger mt-4" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let fieldCount = 0;
+        
+        function addField(header = '', format = '') {
+            fieldCount++;
+            const fieldId = `field-${fieldCount}`;
+            const html = `
+                <div class="field-row" id="${fieldId}">
+                    <input type="text" class="form-control" placeholder="Encabezado (ej: ID)" value="${header}" data-type="header">
+                    <input type="text" class="form-control" placeholder="Formato (ej: ITEM-{n:05d})" value="${format}" data-type="format">
+                    <button type="button" class="remove-field" onclick="removeField('${fieldId}')">×</button>
+                </div>
+            `;
+            document.getElementById('fields-container').insertAdjacentHTML('beforeend', html);
+        }
+        
+        function removeField(fieldId) {
+            document.getElementById(fieldId).remove();
+        }
+        
+        document.getElementById('add-field').addEventListener('click', () => addField());
+        
+        document.getElementById('form-generar').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Recopilar campos
+            const campos = [];
+            document.querySelectorAll('#fields-container .field-row').forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                const header = inputs[0].value.trim();
+                const format = inputs[1].value.trim();
+                if (header || format) {
+                    campos.push({ header, format });
+                }
+            });
+            
+            const formData = new FormData(e.target);
+            formData.append('campos', JSON.stringify(campos));
+            
+            document.getElementById('btn-generar').disabled = true;
+            document.getElementById('error').style.display = 'none';
+            
+            try {
+                const response = await fetch('/generar', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('result').style.display = 'block';
+                    document.getElementById('download-link').href = data.download_url;
+                    document.getElementById('download-link').textContent = `Descargar ${data.filename}`;
+                    
+                    // Mostrar preview
+                    let previewHtml = '<table><thead><tr>';
+                    if (data.preview.length > 0) {
+                        data.preview[0].forEach(h => previewHtml += `<th>${h}</th>`);
+                        previewHtml += '</tr></thead><tbody>';
+                        data.preview.slice(1).forEach(row => {
+                            previewHtml += '<tr>';
+                            row.forEach(cell => previewHtml += `<td>${cell}</td>`);
+                            previewHtml += '</tr>';
+                        });
+                    }
+                    previewHtml += '</tbody></table>';
+                    document.getElementById('preview').innerHTML = previewHtml;
+                } else {
+                    document.getElementById('error').textContent = data.error;
+                    document.getElementById('error').style.display = 'block';
+                }
+            } catch (err) {
+                document.getElementById('error').textContent = 'Error de conexión';
+                document.getElementById('error').style.display = 'block';
+            } finally {
+                document.getElementById('btn-generar').disabled = false;
+            }
+        });
+        
+        document.getElementById('btn-limpiar').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/limpiar', { method: 'POST' });
+                const data = await response.json();
+                alert(data.message);
+            } catch (err) {
+                alert('Error al limpiar');
+            }
+        });
+        
+        // Agregar un campo por defecto
+        addField('Valor', 'ITEM-{n:05d}');
+    </script>
+</body>
+</html>
