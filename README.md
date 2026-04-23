@@ -115,4 +115,3 @@ If you find this project helpful, please give it a ⭐ on GitHub!
 ---
 
 Built with ❤️ using Flask and deployed on Render</content>
-<parameter name="filePath">c:\Users\JHON ACEVEDO\OneDrive\Desktop\code\mi-catalogo-app\README.md
